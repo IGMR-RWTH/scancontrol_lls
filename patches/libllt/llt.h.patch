@@ -1,0 +1,18 @@
+--- ext/me_sdk/libllt/include/llt.h
++++ ext/me_sdk/libllt/include/llt.h
+@@ -24,13 +24,9 @@
+ #ifndef LLT_H
+ #define LLT_H
+ 
+-#ifdef __cplusplus
+-extern "C" {
+-#endif
++
+ #include <mescan.h>
+-#ifdef __cplusplus
+-}
+-#endif
++
+ 
+ // LLT Interface Class
+ class CInterfaceLLT

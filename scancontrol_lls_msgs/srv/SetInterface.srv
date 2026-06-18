@@ -1,0 +1,4 @@
+string interface
+---
+bool success
+string errormessage

@@ -1,0 +1,16 @@
+lls_driver:
+  ros__parameters:
+    # Topic / service names (match the node defaults in parameters.hpp)
+    data_topic: "scancontrol_lls/scanPoints"
+    discovery_service: "scancontrol_lls/discoverDevices"
+    interface_service: "scancontrol_lls/setInterface"
+    start_scan: "scancontrol_lls/startScan"
+    stop_scan: "scancontrol_lls/stopScan"
+    # Sensor configuration
+    exposure_time: 1000      # microseconds (< profile_period; <= 40959 on 30xx)
+    profile_period: 10000    # microseconds (idle = period - exposure <= 40959 on 30xx)
+    sensor_sensitivity: "Medium"   # [Minimum, Low, Medium, High, Maximum]
+    sensor_trigger_source: "FreeRun"
+    frame_name: "scanner_tf"
+    frame_buffer_size: 256
+    connect_on_startup: true

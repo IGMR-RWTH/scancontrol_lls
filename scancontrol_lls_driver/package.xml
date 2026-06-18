@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>scancontrol_lls_driver</name>
+  <version>0.0.0</version>
+  <description>
+    ROS 2 driver node for micro-epsilon scanCONTROL laser line / triangulation
+    sensors. Publishes measured profiles as a PointCloud2 and exposes services to
+    discover, select, and start/stop the sensor.
+  </description>
+  <maintainer email="kieffer@igmr.rwth-aachen.de">ros</maintainer>
+  <license>LGPL-3.0</license>
+
+  <depend>libusb-1.0</depend>
+
+  <depend>rclcpp</depend>
+  <depend>libllt</depend>
+  <depend>libmescan</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>scancontrol_lls_msgs</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gmock</test_depend>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
