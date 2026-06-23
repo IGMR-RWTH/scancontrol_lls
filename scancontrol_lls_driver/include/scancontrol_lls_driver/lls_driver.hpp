@@ -10,6 +10,7 @@
 #define SCANCONTROL_LLS_DRIVER__LLS_DRIVER_HPP_
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -51,6 +52,12 @@ private:
   void setProfilePeriod(std::chrono::microseconds period, std::chrono::microseconds exposure);
   void setSensitivity(Sensitivity sensitivity);
   void setTrigger(Trigger trigger);
+  /// Configure the sensor's width/intensity peak filter. Each bound is written
+  /// into a 16-bit field, so values must lie in [0, 65535] and the minima must
+  /// not exceed the maxima; violations throw ScannerError instead of silently
+  /// truncating.
+  void setPeakFilter(
+    int64_t minWidth, int64_t maxWidth, int64_t minIntensity, int64_t maxIntensity);
   bool is30xxSeries();
   void startScan();
   void stopScan();

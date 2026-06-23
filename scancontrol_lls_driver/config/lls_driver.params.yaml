@@ -7,10 +7,17 @@ lls_driver:
     start_scan: "scancontrol_lls/startScan"
     stop_scan: "scancontrol_lls/stopScan"
     # Sensor configuration
-    exposure_time: 1000      # microseconds (< profile_period; <= 40959 on 30xx)
-    profile_period: 10000    # microseconds (idle = period - exposure <= 40959 on 30xx)
-    sensor_sensitivity: "Medium"   # [Minimum, Low, Medium, High, Maximum]
+    exposure_time: 5000      # microseconds (< profile_period; <= 40959 on 30xx)
+    profile_period: 20000    # microseconds (idle = period - exposure <= 40959 on 30xx)
+    sensor_sensitivity: "Minimum"   # [Minimum, Low, Medium, High, Maximum]
     sensor_trigger_source: "FreeRun"
     frame_name: "scanner_tf"
     frame_buffer_size: 256
     connect_on_startup: true
+    # Peak filter: discard reflections outside the width/intensity bounds.
+    # Disabled by default; when false the sensor's stored peak filter is kept.
+    peak_filter_enable: true
+    peak_filter_min_width: 1          # points; range [0, 65535]
+    peak_filter_max_width: 15       # points; >= peak_filter_min_width
+    peak_filter_min_intensity: 200      # range [0, 65535] (typically 0..1023)
+    peak_filter_max_intensity: 1023   # >= peak_filter_min_intensity

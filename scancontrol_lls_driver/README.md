@@ -33,6 +33,7 @@ also tries to connect to the first available interface; a failure there is
 
 ## Features / ToDo's
 - [x] configure scanner from parameter *.yaml file
+- [x] configure the width/intensity peak filter
 - [x] publish scan points on a configurable topic
 - [x] provide start_scan / stop_scan services
 - [x] provide an interface query (discovery) service

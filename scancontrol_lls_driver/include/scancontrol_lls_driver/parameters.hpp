@@ -82,6 +82,36 @@ static constexpr ParameterDescriptor<bool> ConnectOnStartup{
   "If true, the node connects to the first available interface on startup. "
   "Connection failures are non-fatal; the SetInterface service can be used later."};
 
+// Peak filter: the sensor discards reflections whose width (in points) or
+// intensity falls outside the configured bounds. Each bound is written via
+// CInterfaceLLT::SetPeakFilter into a 16-bit field, so all four must fit in
+// [0, 65535]; intensity is typically a 10-bit value (0..1023). Disabled by
+// default so the sensor's stored peak filter configuration is left untouched.
+static constexpr ParameterDescriptor<bool> PeakFilterEnable{
+  "peak_filter_enable", false,
+  "If true, apply the width/intensity peak filter (see the peak_filter_* params) "
+  "after connecting. If false, the sensor's stored peak filter is left unchanged."};
+static constexpr ParameterDescriptor<int> PeakFilterMinWidth{
+  "peak_filter_min_width", 1,
+  "Minimum peak width in points to keep; narrower peaks are discarded. "
+  "Range [0, 65535].",
+  std::array<int, 2>{0, 65'535}};
+static constexpr ParameterDescriptor<int> PeakFilterMaxWidth{
+  "peak_filter_max_width", 1'024,
+  "Maximum peak width in points to keep; wider peaks are discarded. "
+  "Range [0, 65535] and must be >= peak_filter_min_width.",
+  std::array<int, 2>{0, 65'535}};
+static constexpr ParameterDescriptor<int> PeakFilterMinIntensity{
+  "peak_filter_min_intensity", 0,
+  "Minimum peak intensity to keep; dimmer peaks are discarded. "
+  "Range [0, 65535] (typically 0..1023).",
+  std::array<int, 2>{0, 65'535}};
+static constexpr ParameterDescriptor<int> PeakFilterMaxIntensity{
+  "peak_filter_max_intensity", 1'023,
+  "Maximum peak intensity to keep; brighter peaks are discarded. "
+  "Range [0, 65535] (typically 0..1023) and must be >= peak_filter_min_intensity.",
+  std::array<int, 2>{0, 65'535}};
+
 }  // namespace params
 }  // namespace scancontrol_lls
 

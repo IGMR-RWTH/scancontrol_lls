@@ -40,6 +40,11 @@ LaserLineScanner::LaserLineScanner()
   StopScanService.registerParam(this);
   FrameBufferSize.registerParam(this);
   ConnectOnStartup.registerParam(this);
+  PeakFilterEnable.registerParam(this);
+  PeakFilterMinWidth.registerParam(this);
+  PeakFilterMaxWidth.registerParam(this);
+  PeakFilterMinIntensity.registerParam(this);
+  PeakFilterMaxIntensity.registerParam(this);
   RCLCPP_INFO(
     this->get_logger(), "Discovery service at: %s", DiscoveryServiceName.getRTValue(this).c_str());
   m_discoveryService = this->create_service<scancontrol_lls_msgs::srv::Discovery>(
@@ -137,6 +142,14 @@ void LaserLineScanner::initializeInterface(const std::string & interface)
 
   setTrigger(TriggerFromString(params::TriggerType.getRTValue(this)));
   setSensitivity(SensitivityFromString(params::Sensitivity.getRTValue(this)));
+
+  if (params::PeakFilterEnable.getRTValue(this)) {
+    setPeakFilter(
+      params::PeakFilterMinWidth.getRTValue(this),
+      params::PeakFilterMaxWidth.getRTValue(this),
+      params::PeakFilterMinIntensity.getRTValue(this),
+      params::PeakFilterMaxIntensity.getRTValue(this));
+  }
 }
 
 void LaserLineScanner::discoveryHandler(
@@ -282,6 +295,40 @@ void LaserLineScanner::setSensitivity(Sensitivity sensitivity)
   } else {
     RCLCPP_ERROR(this->get_logger(), "tried to set gain on a non 30xx series sensor");
   }
+}
+
+void LaserLineScanner::setPeakFilter(
+  int64_t minWidth, int64_t maxWidth, int64_t minIntensity, int64_t maxIntensity)
+{
+  // The SDK writes each bound into a 16-bit field. Reject values that would not
+  // survive the narrowing to gushort instead of silently wrapping them.
+  auto checkRange = [](int64_t value, const char * name) {
+    if (value < 0 || value > 65'535) {
+      throw ScannerError(
+              std::string("peak filter value out of range [0, 65535]: ") + name, 0);
+    }
+  };
+  checkRange(minWidth, "peak_filter_min_width");
+  checkRange(maxWidth, "peak_filter_max_width");
+  checkRange(minIntensity, "peak_filter_min_intensity");
+  checkRange(maxIntensity, "peak_filter_max_intensity");
+  if (minWidth > maxWidth) {
+    throw ScannerError("peak_filter_min_width must not exceed peak_filter_max_width", 0);
+  }
+  if (minIntensity > maxIntensity) {
+    throw ScannerError(
+            "peak_filter_min_intensity must not exceed peak_filter_max_intensity", 0);
+  }
+
+  ScannerError::Check(
+    m_sensor->SetPeakFilter(
+      static_cast<gushort>(minWidth), static_cast<gushort>(maxWidth),
+      static_cast<gushort>(minIntensity), static_cast<gushort>(maxIntensity)),
+    "failed to set peak filter");
+  RCLCPP_INFO(
+    this->get_logger(), "peak filter applied: width [%d, %d], intensity [%d, %d]",
+    static_cast<int>(minWidth), static_cast<int>(maxWidth),
+    static_cast<int>(minIntensity), static_cast<int>(maxIntensity));
 }
 
 void LaserLineScanner::setTrigger(Trigger trigger)
