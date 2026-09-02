@@ -32,7 +32,7 @@ namespace scancontrol_lls
 class LaserLineScanner : public rclcpp::Node
 {
 public:
-  LaserLineScanner();
+  explicit LaserLineScanner(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
   std::unique_ptr<ProfilePublisher> m_converter;

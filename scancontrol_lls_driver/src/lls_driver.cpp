@@ -21,8 +21,8 @@
 namespace scancontrol_lls
 {
 
-LaserLineScanner::LaserLineScanner()
-: Node("lls_driver"), m_sensor(std::make_shared<CInterfaceLLT>())
+LaserLineScanner::LaserLineScanner(const rclcpp::NodeOptions & options)
+: Node("lls_driver", options), m_sensor(std::make_shared<CInterfaceLLT>())
 {
   using namespace std::placeholders;  // NOLINT
   using namespace params;             // NOLINT

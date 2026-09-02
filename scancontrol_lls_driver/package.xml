@@ -14,6 +14,7 @@
   <depend>libusb-1.0</depend>
 
   <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
   <depend>libllt</depend>
   <depend>libmescan</depend>
   <depend>sensor_msgs</depend>

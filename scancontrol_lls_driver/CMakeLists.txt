@@ -8,6 +8,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(scancontrol_lls_msgs REQUIRED)
@@ -16,6 +17,7 @@ find_package(libmescan REQUIRED)
 
 set(DEPENDENCIES
   rclcpp
+  rclcpp_components
   std_srvs
   sensor_msgs
   scancontrol_lls_msgs
@@ -23,7 +25,12 @@ set(DEPENDENCIES
   libmescan
 )
 
-add_library(lls_driver SHARED src/scanner_interface.cpp src/lls_driver.cpp src/message_point.cpp src/buffer.cpp src/profile_publisher.cpp)
+add_library(lls_driver SHARED
+  src/scanner_interface.cpp
+  src/lls_driver.cpp
+  src/message_point.cpp
+  src/buffer.cpp
+  src/profile_publisher.cpp)
 set_target_properties(lls_driver PROPERTIES CXX_STANDARD 20)
 
 target_include_directories(lls_driver PUBLIC
@@ -31,14 +38,24 @@ target_include_directories(lls_driver PUBLIC
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(lls_driver ${DEPENDENCIES})
 
+add_library(lls_driver_component SHARED src/component.cpp)
+set_target_properties(lls_driver_component PROPERTIES CXX_STANDARD 20)
+# target_link_libraries(lls_driver_component lls_driver)
+target_include_directories(lls_driver_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(lls_driver_component lls_driver)
+ament_target_dependencies(lls_driver_component ${DEPENDENCIES})
+rclcpp_components_register_nodes(lls_driver_component "scancontrol_lls::LaserLineScanner")
+
 add_executable(lls_node src/main.cpp)
 target_link_libraries(lls_node PRIVATE lls_driver)
 
-install(TARGETS lls_driver
+install(TARGETS lls_driver lls_driver_component
   EXPORT export_${PROJECT_NAME}
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
-  RUNTIME DESTINATION bin
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(${DEPENDENCIES})
