@@ -112,6 +112,12 @@ static constexpr ParameterDescriptor<int> PeakFilterMaxIntensity{
   "Range [0, 65535] (typically 0..1023) and must be >= peak_filter_min_intensity.",
   std::array<int, 2>{0, 65'535}};
 
+static constexpr ParameterDescriptor<bool> FakeMode{
+  "fake_mode", false,
+  "Boolean [true / false] to toggle the fake mode of the lls_driver node. "
+  "If true, skips real sensor setup and connection and simply publishes as fake profile. "
+  "Can be used for integration tests without real hardware or simulated sensor."};
+
 }  // namespace params
 }  // namespace scancontrol_lls
 

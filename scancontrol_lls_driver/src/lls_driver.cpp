@@ -12,6 +12,7 @@
 #include <memory>
 #include <memory_resource>
 #include <string>
+#include <cmath>
 
 #include "llt.h"  // NOLINT
 #include "rclcpp/rclcpp.hpp"
@@ -45,6 +46,7 @@ LaserLineScanner::LaserLineScanner(const rclcpp::NodeOptions & options)
   PeakFilterMaxWidth.registerParam(this);
   PeakFilterMinIntensity.registerParam(this);
   PeakFilterMaxIntensity.registerParam(this);
+  FakeMode.registerParam(this);
   RCLCPP_INFO(
     this->get_logger(), "Discovery service at: %s", DiscoveryServiceName.getRTValue(this).c_str());
   m_discoveryService = this->create_service<scancontrol_lls_msgs::srv::Discovery>(
@@ -71,14 +73,24 @@ LaserLineScanner::LaserLineScanner(const rclcpp::NodeOptions & options)
 
   // Optionally connect to the first available interface on startup. Failures are
   // non-fatal: the node stays up so the SetInterface service can be used later.
-  if (ConnectOnStartup.getRTValue(this)) {
-    try {
-      initializeInterface("");
-    } catch (const ScannerError & e) {
-      RCLCPP_WARN(
-        this->get_logger(),
-        "connect_on_startup: could not connect to a sensor (%s). Use the '%s' service to connect.",
-        e.what(), InterfaceSelectionService.getRTValue(this).c_str());
+  if (FakeMode.getRTValue(this)) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Fake mode is active. No sensor connection will be set up. "
+      "Call the '%s' service to publish dummy profiles on '%s'",
+      StartScanService.getRTValue(this).c_str(),
+      DataTopic.getRTValue(this).c_str());
+  }
+  else {
+    if (ConnectOnStartup.getRTValue(this)) {
+      try {
+        initializeInterface("");
+      } catch (const ScannerError & e) {
+        RCLCPP_WARN(
+          this->get_logger(),
+          "connect_on_startup: could not connect to a sensor (%s). Use the '%s' service to connect.",
+          e.what(), InterfaceSelectionService.getRTValue(this).c_str());
+      }
     }
   }
 }
@@ -172,6 +184,12 @@ void LaserLineScanner::setInterfaceHandler(
   const std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Request> request,
   std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Response> response)
 {
+  if (params::FakeMode.getRTValue(this)) {
+    RCLCPP_WARN(this->get_logger(), "SetInterface rejected: the node currently runs in fake mode.");
+    response->success = false;
+    response->errormessage = "Cannot change interface while in fake mode; change fake_mode parameter first";
+    return;
+  }
   if (m_scanning) {
     RCLCPP_WARN(this->get_logger(), "SetInterface rejected: a scan is currently running");
     response->success = false;
@@ -361,6 +379,20 @@ void LaserLineScanner::startScan()
   if (m_scanning) {
     throw ScannerError("a scan is already running; call stop_scan first", 0);
   }
+
+  if (params::FakeMode.getRTValue(this)) {
+    const auto period = std::chrono::microseconds(
+      params::ProfilePeriodMicroseconds.getRTValue(this));
+    if (period <= std::chrono::microseconds::zero()) {
+      throw ScannerError("profile period must be greater than zero", 0);
+    }
+
+    m_fakeProfileTimer = this->create_wall_timer(
+      period, std::bind(&LaserLineScanner::publishFakeProfile, this));
+    m_scanning = true;
+    return;
+  }
+
   guint32 res{0};
   TScannerType type{};
   m_sensor->GetResolution(&res);
@@ -385,6 +417,14 @@ void LaserLineScanner::stopScan()
   if (!m_scanning) {
     throw ScannerError("no scan is currently running", 0);
   }
+
+  if (m_fakeProfileTimer) {
+    m_fakeProfileTimer->cancel();
+    m_fakeProfileTimer.reset();
+    m_scanning = false;
+    return;
+  }
+
   ScannerError::Check(
     m_sensor->TransferProfiles(NORMAL_TRANSFER, false), "failed to disable profile transfer");
   ScannerError::Check(
@@ -396,5 +436,36 @@ void LaserLineScanner::Callback(const void * data, size_t size, gpointer user_da
   auto instance = reinterpret_cast<LaserLineScanner *>(user_data);
   instance->m_converter->emplaceData(
     reinterpret_cast<const unsigned char *>(data), size, instance->get_clock()->now());
+}
+
+void LaserLineScanner::publishFakeProfile()
+{
+  constexpr size_t FAKE_RESOLUTION = 640;
+  constexpr double HALF_WIDTH_M = 0.05;
+  constexpr double BASE_DISTANCE_M = 0.10;
+  constexpr double PROFILE_AMPLITUDE_M = 0.01;
+  constexpr double TWO_PI = 6.283185307179586;
+
+  auto pc = std::make_unique<sensor_msgs::msg::PointCloud2>(
+    MessagePoint::NewPointCloud(FAKE_RESOLUTION));
+  pc->header.stamp = this->get_clock()->now();
+  pc->header.frame_id = params::FrameName.getRTValue(this);
+
+  for (size_t idx = 0; idx < FAKE_RESOLUTION; ++idx) {
+    const double position =
+      static_cast<double>(idx) / static_cast<double>(FAKE_RESOLUTION - 1);
+    auto * pt = MessagePoint::NewInPlace(*pc, idx);
+    pt->x = static_cast<float>((2.0 * position - 1.0) * HALF_WIDTH_M);
+    pt->y = 0.0F;
+    pt->z = static_cast<float>(
+      BASE_DISTANCE_M + PROFILE_AMPLITUDE_M * std::sin(TWO_PI * position));
+    pt->m0 = 0;
+    pt->m1 = 0;
+    pt->width = 1;
+    pt->intensity = 1000;
+    pt->threshold = 0;
+  }
+
+  m_dataPublisher->publish(std::move(pc));
 }
 }  // namespace scancontrol_lls

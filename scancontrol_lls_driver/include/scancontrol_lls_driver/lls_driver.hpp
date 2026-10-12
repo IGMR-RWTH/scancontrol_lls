@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/timer.hpp"
 #include "scancontrol_lls_driver/profile_publisher.hpp"
 #include "scancontrol_lls_msgs/srv/discovery.hpp"
 #include "scancontrol_lls_msgs/srv/set_interface.hpp"
@@ -46,6 +47,7 @@ private:
   std::string m_configFilePath;
   /// true while a scan is running; guards against reconfiguring or starting twice.
   std::atomic_bool m_scanning{false};
+  rclcpp::TimerBase::SharedPtr m_fakeProfileTimer;
 
   static void Callback(const void * pucData, size_t uiSize, gpointer user_data);
 
@@ -71,6 +73,8 @@ private:
     std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Response> response);
   void startScanHandler(std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   void stopScanHandler(std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+
+  void publishFakeProfile();
 };
 }   // namespace scancontrol_lls
 #endif  // SCANCONTROL_LLS_DRIVER__LLS_DRIVER_HPP_
