@@ -53,8 +53,10 @@ LifecycleCallbackReturn LaserLineScanner::on_configure([[maybe_unused]] const Li
 {
   using namespace std::placeholders;  // NOLINT
   using namespace params;             // NOLINT
-
+  
   try {
+    m_fakeMode = params::FakeMode.getRTValue(this);
+
     RCLCPP_INFO(this->get_logger(), "Publishing data to: %s", DataTopic.getRTValue(this).c_str());
     m_dataPublisher = this->create_publisher<sensor_msgs::msg::PointCloud2>(
       DataTopic.getRTValue(this), rclcpp::SensorDataQoS());
@@ -83,7 +85,7 @@ LifecycleCallbackReturn LaserLineScanner::on_configure([[maybe_unused]] const Li
 
     // Optionally connect to the first available interface on startup. Failures are
     // non-fatal: the node stays up so the SetInterface service can be used later.
-    if (FakeMode.getRTValue(this)) {
+    if (m_fakeMode) {
       RCLCPP_WARN(
         this->get_logger(),
         "Fake mode is active. No sensor connection will be set up. "
@@ -91,7 +93,7 @@ LifecycleCallbackReturn LaserLineScanner::on_configure([[maybe_unused]] const Li
         StartScanService.getRTValue(this).c_str(),
         DataTopic.getRTValue(this).c_str());
     }
-    else if (ConnectOnStartup.getRTValue(this)) {
+    else if (params::ConnectOnStartup.getRTValue(this)) {
       try {
         initializeInterface("");
       } catch (const ScannerError & e) {
@@ -126,6 +128,8 @@ LifecycleCallbackReturn LaserLineScanner::on_activate([[maybe_unused]] const Lif
 
 LifecycleCallbackReturn LaserLineScanner::on_deactivate([[maybe_unused]] const LifecycleState & state)
 {
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+
   try {
     if (m_scanning) {
       stopScan();
@@ -142,6 +146,8 @@ LifecycleCallbackReturn LaserLineScanner::on_deactivate([[maybe_unused]] const L
 
 LifecycleCallbackReturn LaserLineScanner::on_cleanup([[maybe_unused]] const LifecycleState & state)
 {
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+
   try {
     if (m_scanning) {
       stopScan();
@@ -152,7 +158,11 @@ LifecycleCallbackReturn LaserLineScanner::on_cleanup([[maybe_unused]] const Life
   }
 
   m_fakeProfileTimer.reset();
-  m_converter.reset();
+  {
+    // An in-flight callback must finish using the converter before it is reset.
+    const std::lock_guard<std::mutex> converterLock(m_converterMutex);
+    m_converter.reset();
+  }
   m_discoveryService.reset();
   m_setInterfaceService.reset();
   m_startScanService.reset();
@@ -169,6 +179,8 @@ LifecycleCallbackReturn LaserLineScanner::on_cleanup([[maybe_unused]] const Life
 
 LifecycleCallbackReturn LaserLineScanner::on_shutdown([[maybe_unused]] const LifecycleState & state)
 {
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+
   try {
     if (m_scanning) {
       stopScan();
@@ -179,7 +191,11 @@ LifecycleCallbackReturn LaserLineScanner::on_shutdown([[maybe_unused]] const Lif
   }
 
   m_fakeProfileTimer.reset();
-  m_converter.reset();
+  {
+    // An in-flight callback must finish using the converter before it is reset.
+    const std::lock_guard<std::mutex> converterLock(m_converterMutex);
+    m_converter.reset();
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -197,6 +213,10 @@ std::vector<std::string> LaserLineScanner::GetInterfaces()
   int if_count = CInterfaceLLT::GetDeviceInterfaces(interfaces.data(), interfaces.size());
   if (if_count < 0) {
     throw ScannerError("DiscoveryService: Failed to discover interfaces.", if_count);
+  }
+  // Do not index beyond the buffer supplied to the SDK.
+  if (static_cast<size_t>(if_count) > interfaces.size()) {
+    throw ScannerError("DiscoveryService: interface buffer is too small.", if_count);
   }
   std::vector<std::string> str_interfaces(if_count);
   for (int idx = 0; idx < if_count; ++idx) {
@@ -273,6 +293,8 @@ void LaserLineScanner::setInterfaceHandler(
   const std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Request> request,
   std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Response> response)
 {
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
   {
     response->success = false;
@@ -280,7 +302,7 @@ void LaserLineScanner::setInterfaceHandler(
     return;
   }
 
-  if (params::FakeMode.getRTValue(this)) {
+  if (m_fakeMode) {
     RCLCPP_WARN(this->get_logger(), "SetInterface rejected: the node currently runs in fake mode.");
     response->success = false;
     response->errormessage = "Cannot change interface while in fake mode; change fake_mode parameter first";
@@ -306,6 +328,9 @@ void LaserLineScanner::setInterfaceHandler(
 
 void LaserLineScanner::startScanHandler(std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
+  // Keep the state check and scan start in one serialized operation.
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
   {
     response->success = false;
@@ -325,6 +350,8 @@ void LaserLineScanner::startScanHandler(std::shared_ptr<std_srvs::srv::Trigger::
 
 void LaserLineScanner::stopScanHandler(std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+
   try {
     stopScan();
     response->success = true;
@@ -486,7 +513,7 @@ void LaserLineScanner::startScan()
 
   RCLCPP_INFO(this->get_logger(), "Start publishing scans.");
 
-  if (params::FakeMode.getRTValue(this)) {
+  if (m_fakeMode) {
     const auto period = std::chrono::microseconds(
       params::ProfilePeriodMicroseconds.getRTValue(this));
     if (period <= std::chrono::microseconds::zero()) {
@@ -505,19 +532,37 @@ void LaserLineScanner::startScan()
 
   guint32 res{0};
   TScannerType type{};
-  m_sensor->GetResolution(&res);
-  size_t resolution{res};
-  m_sensor->GetLLTType(&type);
-  m_converter = std::make_unique<decltype(m_converter)::element_type>(
-    resolution, type, [pub = m_dataPublisher](std::unique_ptr<sensor_msgs::msg::PointCloud2> pc) {
-      pub->publish(std::move(pc));
-    }, params::FrameName.getRTValue(this),
-    params::FrameBufferSize.getRTValue(this));
+  ScannerError::Check(m_sensor->GetResolution(&res), "failed to retrieve resolution");
+  ScannerError::Check(m_sensor->GetLLTType(&type), "failed to retrieve scanner type");
+  
+  {
+    // Use the same lock as Callback() and lifecycle cleanup.
+    const std::lock_guard<std::mutex> lock(m_converterMutex);
+    m_converter = std::make_unique<ProfilePublisher>(
+      res, type,
+      [pub = m_dataPublisher](std::unique_ptr<sensor_msgs::msg::PointCloud2> pc) {
+        pub->publish(std::move(pc));
+      },
+      params::FrameName.getRTValue(this),
+      params::FrameBufferSize.getRTValue(this));
+  }
+  
   ScannerError::Check(
     m_sensor->RegisterBufferCallback((gpointer) & LaserLineScanner::Callback, this),
     "failed to register buffer callback");
-  ScannerError::Check(
-    m_sensor->TransferProfiles(NORMAL_TRANSFER, true), "failed to start transfer");
+
+  try {
+    ScannerError::Check(
+      m_sensor->TransferProfiles(NORMAL_TRANSFER, true),
+      "failed to start transfer");
+  } catch (...) {
+    // A failed start must not leave a callback pointing at this node.
+    ScannerError::Check(
+      m_sensor->RegisterBufferCallback(nullptr, nullptr),
+      "failed to unregister callback after transfer start failure");
+    throw;
+  }
+  
   m_scanning = true;
 }
 
@@ -545,13 +590,25 @@ void LaserLineScanner::stopScan()
 }
 void LaserLineScanner::Callback(const void * data, size_t size, gpointer user_data)
 {
-  auto instance = reinterpret_cast<LaserLineScanner *>(user_data);
-  instance->m_converter->emplaceData(
-    reinterpret_cast<const unsigned char *>(data), size, instance->get_clock()->now());
+  auto * instance = static_cast<LaserLineScanner *>(user_data);
+  const std::lock_guard<std::mutex> lock(instance->m_converterMutex);
+
+  // A callback already in flight may arrive while the scan is stopping.
+  if (instance->m_converter) {
+    instance->m_converter->emplaceData(
+      static_cast<const unsigned char *>(data), size,
+      instance->get_clock()->now());
+  }
+
 }
 
 void LaserLineScanner::publishFakeProfile()
 {
+  const std::lock_guard<std::mutex> lock(m_scanMutex);
+  if (!m_scanning || !m_dataPublisher) {
+    return;
+  }
+  
   constexpr size_t FAKE_RESOLUTION = 640;
   constexpr double HALF_WIDTH_M = 0.05;
   constexpr double BASE_DISTANCE_M = 0.10;

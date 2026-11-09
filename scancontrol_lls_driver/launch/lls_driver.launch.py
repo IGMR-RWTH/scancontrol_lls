@@ -1,13 +1,19 @@
 """Launch the scanCONTROL LLS driver node with a parameter file."""
 
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch import LaunchDescription, Action, LaunchContext
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, EmitEvent, RegisterEventHandler
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
+from launch.event_handlers import OnProcessStart
+from launch.events import matches_action
+from lifecycle_msgs.msg import Transition
 
 
-def launch_setup(context, *args, **kwargs):
+def launch_setup(context: LaunchContext, *args, **kwargs):
+
     default_params = PathJoinSubstitution(
         [FindPackageShare("scancontrol_lls_driver"), "config", "lls_driver.params.yaml"]
     )
@@ -24,6 +30,31 @@ def launch_setup(context, *args, **kwargs):
         raise ValueError(
             f"Invalid fake_mode value {fake_mode_str!r}; expected true or false"
         )
+
+    driver = LifecycleNode(
+        package = "scancontrol_lls_driver",
+        executable = "lls_node",
+        name = "lls_driver",
+        namespace = '',
+        output = "screen",
+        parameters = [
+            params_file, 
+            {"fake_mode": fake_mode_bool}
+        ],
+    )
+
+    configure = EmitEvent(
+        event=ChangeState(
+            lifecycle_node_matcher = matches_action(driver),
+            transition_id = Transition.TRANSITION_CONFIGURE,
+        )
+    )
+    activate = EmitEvent(
+        event=ChangeState(
+            lifecycle_node_matcher = matches_action(driver),
+            transition_id = Transition.TRANSITION_ACTIVATE,
+        )
+    )
      
     launch_actions = [
         DeclareLaunchArgument(
@@ -31,15 +62,22 @@ def launch_setup(context, *args, **kwargs):
             default_value = default_params,
             description = "Path to the ROS 2 parameter file for the lls_driver node.",
         ),
-        Node(
-            package = "scancontrol_lls_driver",
-            executable = "lls_node",
-            name = "lls_driver",
-            output = "screen",
-            parameters = [
-                params_file,
-                {'fake_mode': fake_mode_bool}],
+        # Register handlers before starting the process.
+        RegisterEventHandler(
+            OnProcessStart(
+                target_action=driver, 
+                on_start=[configure]
+            )
         ),
+        RegisterEventHandler(
+            OnStateTransition(
+                target_lifecycle_node = driver,
+                start_state = "configuring",
+                goal_state = "inactive",
+                entities = [activate],
+            )
+        ),
+        driver,
     ]
 
     return launch_actions

@@ -1,14 +1,16 @@
 """Launch the scanCONTROL LLS driver as a composable node with a parameter file."""
 
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch import LaunchDescription, Action, LaunchContext
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess, RegisterEventHandler
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import ComposableNodeContainer
+from launch_ros.actions import ComposableNodeContainer, LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
 from launch_ros.substitutions import FindPackageShare
+from launch.event_handlers import OnProcessExit, OnExecutionComplete
+from launch.events.process import ProcessExited
 
 
-def launch_setup(context, *args, **kwargs):
+def launch_setup(context: LaunchContext, *args, **kwargs):
 
     default_params = PathJoinSubstitution(
         [FindPackageShare("scancontrol_lls_driver"), "config", "lls_driver.params.yaml"]
@@ -26,6 +28,42 @@ def launch_setup(context, *args, **kwargs):
         raise ValueError(
             f"Invalid fake_mode value {fake_mode_str!r}; expected true or false"
         )
+
+    container = ComposableNodeContainer(
+        name = "lls_driver_container",
+        namespace = "",
+        package = "rclcpp_components",
+        executable = "component_container_mt",
+        output = "screen",
+        # Load separately so launch can wait for completion.
+        composable_node_descriptions=[],
+    )
+
+    load_driver = LoadComposableNodes(
+        target_container=container,
+        composable_node_descriptions=[
+            ComposableNode(
+                package="scancontrol_lls_driver",
+                plugin="scancontrol_lls::LaserLineScanner",
+                name="lls_driver",
+                parameters=[params_file, {"fake_mode": fake_mode_bool}],
+            ),
+        ],
+    )
+
+    configure = ExecuteProcess(
+        cmd=["ros2", "lifecycle", "set", "/lls_driver", "configure"],
+        output="screen",
+    )
+    activate = ExecuteProcess(
+        cmd=["ros2", "lifecycle", "set", "/lls_driver", "activate"],
+        output="screen",
+    )
+
+    def on_configure_exit(event: ProcessExited, context: LaunchContext):
+        # Do not attempt activation if the configure command failed.
+        return [activate] if event.returncode == 0 else []
+
     
     launch_actions = [
 
@@ -34,24 +72,10 @@ def launch_setup(context, *args, **kwargs):
             default_value = default_params,
             description = "Path to the ROS 2 parameter file for the lls_driver component.",
         ),
-        ComposableNodeContainer(
-            name = "lls_driver_container",
-            namespace = "",
-            package = "rclcpp_components",
-            executable = "component_container_mt",
-            output = "screen",
-            composable_node_descriptions = [
-                ComposableNode(
-                    package = "scancontrol_lls_driver",
-                    plugin = "scancontrol_lls::LaserLineScanner",
-                    name = "lls_driver",
-                    parameters = [
-                        params_file,
-                        {'fake_mode': fake_mode_bool}
-                    ],
-                )
-            ],
-        ),
+        container,
+        RegisterEventHandler(OnExecutionComplete(target_action=load_driver, on_completion=[configure])),
+        RegisterEventHandler(OnProcessExit(target_action=configure, on_exit=on_configure_exit)),
+        load_driver,
     ]
 
     return launch_actions

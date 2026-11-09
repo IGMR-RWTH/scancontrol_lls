@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <mutex>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/timer.hpp"
@@ -53,6 +54,7 @@ private:
   /// true while a scan is running; guards against reconfiguring or starting twice.
   std::atomic_bool m_scanning{false};
   bool m_connected{false};
+  bool m_fakeMode{false};
   rclcpp::TimerBase::SharedPtr m_fakeProfileTimer;
 
   LifecycleCallbackReturn on_configure(const LifecycleState & state) override;
@@ -60,6 +62,11 @@ private:
   LifecycleCallbackReturn on_deactivate(const LifecycleState & state) override;
   LifecycleCallbackReturn on_cleanup(const LifecycleState & state) override;
   LifecycleCallbackReturn on_shutdown(const LifecycleState & state) override;
+
+  // Serializes service requests and lifecycle operations that change scan state.
+  std::mutex m_scanMutex;
+  // Protects m_converter from SDK callbacks during creation and destruction.
+  std::mutex m_converterMutex;
 
   static void Callback(const void * pucData, size_t uiSize, gpointer user_data);
 
