@@ -16,6 +16,7 @@
 
 #include "llt.h"  // NOLINT
 #include "rclcpp/rclcpp.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include "scancontrol_lls_driver/parameters.hpp"
 #include "scancontrol_lls_driver/profile_publisher.hpp"
 
@@ -23,9 +24,8 @@ namespace scancontrol_lls
 {
 
 LaserLineScanner::LaserLineScanner(const rclcpp::NodeOptions & options)
-: Node("lls_driver", options), m_sensor(std::make_shared<CInterfaceLLT>())
+: LifecycleNode("lls_driver", options), m_sensor(std::make_shared<CInterfaceLLT>())
 {
-  using namespace std::placeholders;  // NOLINT
   using namespace params;             // NOLINT
   // register the nodes parameters.
   DataTopic.registerParam(this);
@@ -47,52 +47,140 @@ LaserLineScanner::LaserLineScanner(const rclcpp::NodeOptions & options)
   PeakFilterMinIntensity.registerParam(this);
   PeakFilterMaxIntensity.registerParam(this);
   FakeMode.registerParam(this);
-  RCLCPP_INFO(
-    this->get_logger(), "Discovery service at: %s", DiscoveryServiceName.getRTValue(this).c_str());
-  m_discoveryService = this->create_service<scancontrol_lls_msgs::srv::Discovery>(
-    DiscoveryServiceName.getRTValue(this),
-    std::bind(&LaserLineScanner::discoveryHandler, this, _2));
-  RCLCPP_INFO(
-    this->get_logger(), "Initialization service at: %s",
-    InterfaceSelectionService.getRTValue(this).c_str());
-  m_setInterfaceService = this->create_service<scancontrol_lls_msgs::srv::SetInterface>(
-    InterfaceSelectionService.getRTValue(this),
-    std::bind(&LaserLineScanner::setInterfaceHandler, this, _1, _2));
-  RCLCPP_INFO(
-    this->get_logger(), "StartScan service at: %s", StartScanService.getRTValue(this).c_str());
-  m_startScanService = this->create_service<std_srvs::srv::Trigger>(
-    StartScanService.getRTValue(this), std::bind(&LaserLineScanner::startScanHandler, this, _2));
+}
 
-  RCLCPP_INFO(
-    this->get_logger(), "StopScan service at: %s", StopScanService.getRTValue(this).c_str());
-  m_stopScanService = this->create_service<std_srvs::srv::Trigger>(
-    StopScanService.getRTValue(this), std::bind(&LaserLineScanner::stopScanHandler, this, _2));
-  RCLCPP_INFO(this->get_logger(), "publishing data to: %s", DataTopic.getRTValue(this).c_str());
-  m_dataPublisher = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-    DataTopic.getRTValue(this), rclcpp::SensorDataQoS());
+LifecycleCallbackReturn LaserLineScanner::on_configure([[maybe_unused]] const LifecycleState & state)
+{
+  using namespace std::placeholders;  // NOLINT
+  using namespace params;             // NOLINT
 
-  // Optionally connect to the first available interface on startup. Failures are
-  // non-fatal: the node stays up so the SetInterface service can be used later.
-  if (FakeMode.getRTValue(this)) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Fake mode is active. No sensor connection will be set up. "
-      "Call the '%s' service to publish dummy profiles on '%s'",
-      StartScanService.getRTValue(this).c_str(),
-      DataTopic.getRTValue(this).c_str());
-  }
-  else {
-    if (ConnectOnStartup.getRTValue(this)) {
+  try {
+    RCLCPP_INFO(this->get_logger(), "Publishing data to: %s", DataTopic.getRTValue(this).c_str());
+    m_dataPublisher = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+      DataTopic.getRTValue(this), rclcpp::SensorDataQoS());
+
+    RCLCPP_INFO(this->get_logger(), "Discovery service at: %s", DiscoveryServiceName.getRTValue(this).c_str());
+    m_discoveryService = this->create_service<scancontrol_lls_msgs::srv::Discovery>(
+      DiscoveryServiceName.getRTValue(this),
+      std::bind(&LaserLineScanner::discoveryHandler, this, _2));
+    
+    RCLCPP_INFO( this->get_logger(), "Initialization service at: %s",
+      InterfaceSelectionService.getRTValue(this).c_str());
+    m_setInterfaceService = this->create_service<scancontrol_lls_msgs::srv::SetInterface>(
+      InterfaceSelectionService.getRTValue(this),
+      std::bind(&LaserLineScanner::setInterfaceHandler, this, _1, _2));
+    
+      RCLCPP_INFO(this->get_logger(), "StartScan service at: %s", StartScanService.getRTValue(this).c_str());
+    m_startScanService = this->create_service<std_srvs::srv::Trigger>(
+      StartScanService.getRTValue(this), std::bind(&LaserLineScanner::startScanHandler, this, _2));
+
+    RCLCPP_INFO(
+      this->get_logger(), "StopScan service at: %s", StopScanService.getRTValue(this).c_str());
+    m_stopScanService = this->create_service<std_srvs::srv::Trigger>(
+      StopScanService.getRTValue(this), std::bind(&LaserLineScanner::stopScanHandler, this, _2));
+    
+    
+
+    // Optionally connect to the first available interface on startup. Failures are
+    // non-fatal: the node stays up so the SetInterface service can be used later.
+    if (FakeMode.getRTValue(this)) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Fake mode is active. No sensor connection will be set up. "
+        "Call the '%s' service to publish dummy profiles on '%s'",
+        StartScanService.getRTValue(this).c_str(),
+        DataTopic.getRTValue(this).c_str());
+    }
+    else if (ConnectOnStartup.getRTValue(this)) {
       try {
         initializeInterface("");
       } catch (const ScannerError & e) {
         RCLCPP_WARN(
           this->get_logger(),
-          "connect_on_startup: could not connect to a sensor (%s). Use the '%s' service to connect.",
+          "connect_on_startup: could not connect to a sensor (%s). "
+          "Use the '%s' service to connect.",
           e.what(), InterfaceSelectionService.getRTValue(this).c_str());
       }
     }
+  
+    return LifecycleCallbackReturn::SUCCESS;
+
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to configure scanner: %s", e.what());
+    return CallbackReturn::FAILURE;
   }
+
+}
+
+LifecycleCallbackReturn LaserLineScanner::on_activate([[maybe_unused]] const LifecycleState & state)
+{
+  if (!m_dataPublisher) {
+    RCLCPP_ERROR(this->get_logger(), "Cannot activate an unconfigured publisher");
+    return CallbackReturn::FAILURE;
+  }
+
+  m_dataPublisher->on_activate();
+  RCLCPP_INFO(this->get_logger(), "Scanner node is active");
+  return CallbackReturn::SUCCESS;
+}
+
+LifecycleCallbackReturn LaserLineScanner::on_deactivate([[maybe_unused]] const LifecycleState & state)
+{
+  try {
+    if (m_scanning) {
+      stopScan();
+    }
+  } catch (const ScannerError & e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to stop scan during deactivation: %s", e.what());
+    return CallbackReturn::FAILURE;
+  }
+
+  m_dataPublisher->on_deactivate();
+  RCLCPP_INFO(this->get_logger(), "Scanner node is inactive");
+  return CallbackReturn::SUCCESS;
+}
+
+LifecycleCallbackReturn LaserLineScanner::on_cleanup([[maybe_unused]] const LifecycleState & state)
+{
+  try {
+    if (m_scanning) {
+      stopScan();
+    }
+  } catch (const ScannerError & e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to stop scan during cleanup: %s", e.what());
+    return CallbackReturn::FAILURE;
+  }
+
+  m_fakeProfileTimer.reset();
+  m_converter.reset();
+  m_discoveryService.reset();
+  m_setInterfaceService.reset();
+  m_startScanService.reset();
+  m_stopScanService.reset();
+  m_dataPublisher.reset();
+
+  /** @todo: */
+  // Disconnect the sensor here if the installed LLT SDK provides the
+  // corresponding method. Do not set m_connected to false before disconnecting it.
+
+  RCLCPP_INFO(this->get_logger(), "Scanner node cleaned up");
+  return CallbackReturn::SUCCESS;
+}
+
+LifecycleCallbackReturn LaserLineScanner::on_shutdown([[maybe_unused]] const LifecycleState & state)
+{
+  try {
+    if (m_scanning) {
+      stopScan();
+    }
+  } catch (const ScannerError & e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to stop scan during shutdown: %s", e.what());
+    return CallbackReturn::FAILURE;
+  }
+
+  m_fakeProfileTimer.reset();
+  m_converter.reset();
+  return CallbackReturn::SUCCESS;
 }
 
 bool LaserLineScanner::is30xxSeries()
@@ -147,6 +235,7 @@ void LaserLineScanner::initializeInterface(const std::string & interface)
     "failed to select the desired interface!");
   // Connect sensor
   ScannerError::Check(m_sensor->Connect(), "Failed to connect to sensor");
+  m_connected = true;
   RCLCPP_INFO(this->get_logger(), "Connected to sensor: '%s'", m_deviceInterface.c_str());
   setProfilePeriod(
     std::chrono::microseconds(params::ProfilePeriodMicroseconds.getRTValue(this)),
@@ -184,6 +273,13 @@ void LaserLineScanner::setInterfaceHandler(
   const std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Request> request,
   std::shared_ptr<scancontrol_lls_msgs::srv::SetInterface::Response> response)
 {
+  if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE)
+  {
+    response->success = false;
+    response->errormessage = "cannot reconfigure interface unless the node is inactive";
+    return;
+  }
+
   if (params::FakeMode.getRTValue(this)) {
     RCLCPP_WARN(this->get_logger(), "SetInterface rejected: the node currently runs in fake mode.");
     response->success = false;
@@ -210,6 +306,13 @@ void LaserLineScanner::setInterfaceHandler(
 
 void LaserLineScanner::startScanHandler(std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
+  if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+  {
+    response->success = false;
+    response->message = "cannot start scan unless the node is active";
+    return;
+  }
+
   try {
     startScan();
     response->success = true;
@@ -376,9 +479,12 @@ void LaserLineScanner::setTrigger(Trigger trigger)
 void LaserLineScanner::startScan()
 {
   using namespace std::placeholders;
+
   if (m_scanning) {
     throw ScannerError("a scan is already running; call stop_scan first", 0);
   }
+
+  RCLCPP_INFO(this->get_logger(), "Start publishing scans.");
 
   if (params::FakeMode.getRTValue(this)) {
     const auto period = std::chrono::microseconds(
@@ -391,6 +497,10 @@ void LaserLineScanner::startScan()
       period, std::bind(&LaserLineScanner::publishFakeProfile, this));
     m_scanning = true;
     return;
+  }
+
+  if (!m_connected) {
+    throw ScannerError("no sensor connected; select an interface first", 0);
   }
 
   guint32 res{0};
@@ -417,6 +527,8 @@ void LaserLineScanner::stopScan()
   if (!m_scanning) {
     throw ScannerError("no scan is currently running", 0);
   }
+
+  RCLCPP_INFO(this->get_logger(), "Stop publishing scans.");
 
   if (m_fakeProfileTimer) {
     m_fakeProfileTimer->cancel();

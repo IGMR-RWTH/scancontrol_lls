@@ -15,6 +15,7 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
+  <depend>rclcpp_lifecycle</depend>
   <depend>libllt</depend>
   <depend>libmescan</depend>
   <depend>sensor_msgs</depend>

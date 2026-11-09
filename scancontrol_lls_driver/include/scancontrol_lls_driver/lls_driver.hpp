@@ -18,6 +18,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/timer.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "scancontrol_lls_driver/profile_publisher.hpp"
 #include "scancontrol_lls_msgs/srv/discovery.hpp"
 #include "scancontrol_lls_msgs/srv/set_interface.hpp"
@@ -29,15 +30,19 @@
 class CInterfaceLLT;
 namespace scancontrol_lls
 {
+  using LifecycleCallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+  using LifecycleState = rclcpp_lifecycle::State;
 
-class LaserLineScanner : public rclcpp::Node
+class LaserLineScanner : public rclcpp_lifecycle::LifecycleNode
 {
+
 public:
   explicit LaserLineScanner(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
+
   std::unique_ptr<ProfilePublisher> m_converter;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr m_dataPublisher;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr m_dataPublisher;
   rclcpp::Service<scancontrol_lls_msgs::srv::Discovery>::SharedPtr m_discoveryService;
   rclcpp::Service<scancontrol_lls_msgs::srv::SetInterface>::SharedPtr m_setInterfaceService;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr m_startScanService;
@@ -47,7 +52,14 @@ private:
   std::string m_configFilePath;
   /// true while a scan is running; guards against reconfiguring or starting twice.
   std::atomic_bool m_scanning{false};
+  bool m_connected{false};
   rclcpp::TimerBase::SharedPtr m_fakeProfileTimer;
+
+  LifecycleCallbackReturn on_configure(const LifecycleState & state) override;
+  LifecycleCallbackReturn on_activate(const LifecycleState & state) override;
+  LifecycleCallbackReturn on_deactivate(const LifecycleState & state) override;
+  LifecycleCallbackReturn on_cleanup(const LifecycleState & state) override;
+  LifecycleCallbackReturn on_shutdown(const LifecycleState & state) override;
 
   static void Callback(const void * pucData, size_t uiSize, gpointer user_data);
 

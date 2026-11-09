@@ -9,6 +9,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(scancontrol_lls_msgs REQUIRED)
@@ -18,6 +19,7 @@ find_package(libmescan REQUIRED)
 set(DEPENDENCIES
   rclcpp
   rclcpp_components
+  rclcpp_lifecycle
   std_srvs
   sensor_msgs
   scancontrol_lls_msgs

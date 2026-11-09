@@ -111,7 +111,8 @@ public:
    * @param node Pointer to an instance of rclcpp Node where this parameter
    * should be registered.
    */
-  void registerParam(rclcpp::Node * node) const
+  template<typename NodeT>
+  void registerParam(NodeT * node) const
   {
     node->declare_parameter(getName(), getDefault(), getDescriptor());
   }
@@ -127,7 +128,8 @@ public:
    * @return The current runtime value of type T retrieved from the specified
    * node.
    */
-  auto getRTValue(rclcpp::Node * node) const
+  template<typename NodeT>
+  auto getRTValue(NodeT * node) const
   {
     static_assert(!std::is_void_v<T>, "Unsupported parameter type");
     if constexpr (
